@@ -11,22 +11,29 @@ Generic LLM benchmarks (MMLU, HumanEval, etc.) don't tell you how a model will p
 - Run benchmarks across multiple models (OpenAI, Ollama, MLX)
 - Generate detailed reports with per-task and per-model breakdowns
 
-## Installation
+## Getting Started
 
 ```bash
-npm install practica-llm-bench
+# Clone and install
+cd PracticaLlmBench
+npm install
+npm run build
+
+# Run the example
+OPENAI_API_KEY=sk-... npx tsx examples/simple-task.ts
 ```
 
 ## Quick Start
 
 ```typescript
+// Import from local src (or dist after build)
 import {
   BaseTask,
   BenchmarkSuite,
   OpenAIAdapter,
   OllamaAdapter,
   generateTextReport,
-} from 'practica-llm-bench';
+} from './src/index.js';
 
 // 1. Define a task
 class SentimentTask extends BaseTask<{ text: string }, { sentiment: string }> {
@@ -152,21 +159,18 @@ new MLXAdapter({
 ### Text Report
 
 ```typescript
-import { generateTextReport } from 'practica-llm-bench';
 console.log(generateTextReport(results));
 ```
 
 ### JSON Report
 
 ```typescript
-import { generateJSONReport } from 'practica-llm-bench';
 fs.writeFileSync('report.json', generateJSONReport(results));
 ```
 
 ### Markdown Report
 
 ```typescript
-import { generateMarkdownReport } from 'practica-llm-bench';
 fs.writeFileSync('report.md', generateMarkdownReport(results));
 ```
 
