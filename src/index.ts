@@ -50,6 +50,13 @@ export type {
   BenchmarkResult,
   SuiteResult,
   TaskTestCase,
+  // Structured outputs & tool calling
+  JSONSchemaDefinition,
+  Tool,
+  ToolFunction,
+  ToolChoice,
+  ToolCall,
+  ToolCallResponse,
 } from './core/types.js';
 
 // Benchmark
@@ -64,7 +71,7 @@ export {
 } from './benchmark/Reporter.js';
 
 // Adapters
-export type { ILLMAdapter } from './adapters/llm/ILLMAdapter.js';
+export type { ILLMAdapter, CompletionOptions, ToolCallOptions } from './adapters/llm/ILLMAdapter.js';
 export { BaseLLMAdapter, type LLMRequestOptions } from './adapters/llm/BaseLLMAdapter.js';
 export { OpenAIAdapter, type OpenAIConfig } from './adapters/llm/OpenAIAdapter.js';
 export { OllamaAdapter, type OllamaConfig } from './adapters/llm/OllamaAdapter.js';

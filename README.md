@@ -48,14 +48,14 @@ class SentimentTask extends BaseTask<{ text: string }, { sentiment: string }> {
 // 2. Create benchmark suite
 const suite = new BenchmarkSuite({ name: 'My Benchmark' });
 
-// 3. Add models
-suite.addModel('gpt-4o-mini', new OpenAIAdapter({
+// 3. Add models (use your preferred model names)
+suite.addModel('openai', new OpenAIAdapter({
   apiKey: process.env.OPENAI_API_KEY,
-  model: 'gpt-4o-mini',
+  model: process.env.OPENAI_MODEL || 'gpt-4.1-mini', // or gpt-4o, etc.
 }));
-suite.addModel('llama3.2', new OllamaAdapter({
+suite.addModel('ollama', new OllamaAdapter({
   endpoint: 'http://localhost:11434',
-  model: 'llama3.2',
+  model: 'llama3.2:3b', // or qwen2.5, mistral, etc.
 }));
 
 // 4. Add task with test cases
@@ -122,11 +122,11 @@ const results = await suite.run();
 
 ```typescript
 new OpenAIAdapter({
-  apiKey: 'sk-...',
-  model: 'gpt-4o-mini',
-  endpoint: 'https://api.openai.com/v1', // optional
+  apiKey: process.env.OPENAI_API_KEY,
+  model: 'gpt-4.1-mini', // or gpt-4o, gpt-4.1-nano, etc.
+  endpoint: 'https://api.openai.com/v1', // optional, default
   maxRetries: 3, // optional
-  timeoutMs: 30000, // optional
+  timeoutMs: 30000, // optional (120s for reasoning models)
   concurrency: 10, // optional
 });
 ```
@@ -136,9 +136,9 @@ new OpenAIAdapter({
 ```typescript
 new OllamaAdapter({
   endpoint: 'http://localhost:11434',
-  model: 'llama3.2',
-  numCtx: 32768, // optional
-  timeoutMs: 600000, // optional
+  model: 'llama3.2:3b', // or qwen2.5:7b, mistral, etc.
+  numCtx: 32768, // optional context window
+  timeoutMs: 600000, // optional (10 min default)
   concurrency: 1, // optional
 });
 ```
@@ -147,12 +147,85 @@ new OllamaAdapter({
 
 ```typescript
 new MLXAdapter({
-  endpoint: 'http://localhost:11434/v1',
-  model: 'mlx-community/...',
+  endpoint: 'http://localhost:11434/v1', // mlx_lm.server default
+  model: 'mlx-community/Qwen2.5-7B-Instruct-4bit',
   timeoutMs: 600000, // optional
   concurrency: 1, // optional
 });
 ```
+
+## Structured Outputs (JSON Schema)
+
+Force the LLM to return JSON matching a specific schema:
+
+```typescript
+const response = await adapter.complete(
+  'Analyze the sentiment of: {{text}}',
+  { text: 'I love this product!' },
+  {
+    jsonSchema: {
+      name: 'sentiment_response',
+      schema: {
+        type: 'object',
+        properties: {
+          sentiment: { type: 'string', enum: ['positive', 'negative', 'neutral'] },
+          confidence: { type: 'number', minimum: 0, maximum: 1 },
+        },
+        required: ['sentiment', 'confidence'],
+      },
+      strict: true, // Enforce exact schema match (OpenAI)
+    },
+  }
+);
+```
+
+Supported by: OpenAI (gpt-4o and later), Ollama (with compatible models)
+
+## Function/Tool Calling
+
+Let the LLM call functions you define:
+
+```typescript
+const tools: Tool[] = [{
+  type: 'function',
+  function: {
+    name: 'get_weather',
+    description: 'Get current weather for a location',
+    parameters: {
+      type: 'object',
+      properties: {
+        location: { type: 'string', description: 'City name' },
+        unit: { type: 'string', enum: ['celsius', 'fahrenheit'] },
+      },
+      required: ['location'],
+    },
+    strict: true, // Enforce exact parameter schema (OpenAI)
+  },
+}];
+
+const response = await adapter.completeWithTools(
+  'What is the weather in Paris?',
+  {},
+  tools,
+  { toolChoice: 'auto' } // 'auto' | 'required' | 'none' | { type: 'function', function: { name: '...' } }
+);
+
+// Response structure:
+// {
+//   content: string | null,        // Text response (may be null)
+//   toolCalls: ToolCall[],         // Array of tool calls
+//   finishReason: 'stop' | 'tool_calls' | 'length' | 'content_filter'
+// }
+
+for (const call of response.toolCalls) {
+  console.log(`Function: ${call.function.name}`);
+  console.log(`Arguments: ${call.function.arguments}`); // JSON string
+  const args = JSON.parse(call.function.arguments);
+  // Execute the function...
+}
+```
+
+Supported by: OpenAI, Ollama (with tool-capable models like llama3.1+)
 
 ## Reports
 

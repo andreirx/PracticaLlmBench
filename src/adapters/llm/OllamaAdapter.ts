@@ -1,4 +1,6 @@
 import { BaseLLMAdapter, LLMRequestOptions } from './BaseLLMAdapter.js';
+import type { ToolCallOptions } from './ILLMAdapter.js';
+import type { Tool, ToolCallResponse, ToolCall } from '../../core/types.js';
 import { Agent } from 'undici';
 
 export interface OllamaConfig {
@@ -40,7 +42,10 @@ export class OllamaAdapter extends BaseLLMAdapter {
       }
     };
 
-    if (options?.expectsJSON) {
+    // Structured outputs (JSON Schema) takes precedence over basic JSON mode
+    if (options?.jsonSchema) {
+      body.format = options.jsonSchema.schema;
+    } else if (options?.expectsJSON) {
       body.format = 'json';
     }
 
@@ -73,6 +78,92 @@ export class OllamaAdapter extends BaseLLMAdapter {
       const res = await fetch(`${this.endpoint}/api/tags`);
       return res.ok;
     } catch { return false; }
+  }
+
+  protected async performCompleteWithTools(
+    finalPrompt: string,
+    tools: Tool[],
+    options?: ToolCallOptions
+  ): Promise<ToolCallResponse> {
+    const body: Record<string, unknown> = {
+      model: this.model,
+      messages: [{ role: 'user', content: finalPrompt }],
+      stream: false, // Ollama tool calling works better non-streaming
+      tools: tools.map(tool => ({
+        type: 'function',
+        function: {
+          name: tool.function.name,
+          description: tool.function.description,
+          parameters: tool.function.parameters,
+        },
+      })),
+      options: {
+        temperature: 0.1,
+        num_ctx: this.numCtx,
+        num_predict: options?.maxTokens || 4096,
+      }
+    };
+
+    this.log(`LLM TOOL CALL [${this.model}]`);
+    return this.performOllamaChatWithTools(body);
+  }
+
+  private async performOllamaChatWithTools(
+    body: Record<string, unknown>
+  ): Promise<ToolCallResponse> {
+    const dispatcher = new Agent({
+      headersTimeout: this.timeoutMs,
+      connectTimeout: this.timeoutMs,
+      bodyTimeout: 0
+    });
+
+    try {
+      const response = await fetch(`${this.endpoint}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        // @ts-ignore - dispatcher is a Node.js specific extension
+        dispatcher,
+        signal: AbortSignal.timeout(this.timeoutMs)
+      });
+
+      if (!response.ok) throw new Error(`Ollama API error: ${response.statusText}`);
+
+      const json = await response.json() as {
+        message?: {
+          content?: string;
+          tool_calls?: Array<{
+            function: { name: string; arguments: Record<string, unknown> };
+          }>;
+        };
+        done_reason?: string;
+      };
+
+      const message = json.message;
+      const toolCalls: ToolCall[] = (message?.tool_calls || []).map((tc, i) => ({
+        id: `call_${i}`,
+        type: 'function' as const,
+        function: {
+          name: tc.function.name,
+          arguments: JSON.stringify(tc.function.arguments),
+        },
+      }));
+
+      const finishReason = json.done_reason === 'stop' ? 'stop' as const :
+                          toolCalls.length > 0 ? 'tool_calls' as const : 'stop' as const;
+
+      this.log(`   Tool response: ${message?.content?.length || 0} chars, ${toolCalls.length} tool calls`);
+
+      return {
+        content: message?.content || null,
+        toolCalls,
+        finishReason,
+      };
+
+    } catch (error) {
+      this.log(`   LLM Error: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
   }
 
   /**

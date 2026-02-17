@@ -1,4 +1,5 @@
-import { ILLMAdapter } from './ILLMAdapter.js';
+import type { ILLMAdapter, CompletionOptions, ToolCallOptions } from './ILLMAdapter.js';
+import type { JSONSchemaDefinition, Tool, ToolCallResponse } from '../../core/types.js';
 import { Semaphore, substituteTemplate } from '../../utils/index.js';
 
 /**
@@ -7,6 +8,7 @@ import { Semaphore, substituteTemplate } from '../../utils/index.js';
 export interface LLMRequestOptions {
   maxTokens?: number;
   expectsJSON?: boolean;
+  jsonSchema?: JSONSchemaDefinition;
 }
 
 /**
@@ -35,15 +37,18 @@ export abstract class BaseLLMAdapter implements ILLMAdapter {
   async complete(
     prompt: string,
     variables: Record<string, string | number | string[]>,
-    options?: { maxTokens?: number; expectsJSON?: boolean }
+    options?: CompletionOptions
   ): Promise<string> {
     return this.semaphore.run(async () => {
       const finalPrompt = this.preparePrompt(prompt, variables);
-      const expectsJSON = options?.expectsJSON ?? this.detectJSONExpectation(prompt);
+      const expectsJSON = options?.expectsJSON !== undefined
+        ? options.expectsJSON
+        : (options?.jsonSchema != null || this.detectJSONExpectation(prompt));
 
       const raw = await this.performComplete(finalPrompt, {
         maxTokens: options?.maxTokens,
-        expectsJSON
+        expectsJSON,
+        jsonSchema: options?.jsonSchema,
       });
 
       if (!raw || raw.trim().length === 0) {
@@ -51,6 +56,18 @@ export abstract class BaseLLMAdapter implements ILLMAdapter {
       }
 
       return expectsJSON ? this.extractJSON(raw) : this.cleanOutput(raw);
+    });
+  }
+
+  async completeWithTools(
+    prompt: string,
+    variables: Record<string, string | number | string[]>,
+    tools: Tool[],
+    options?: ToolCallOptions
+  ): Promise<ToolCallResponse> {
+    return this.semaphore.run(async () => {
+      const finalPrompt = this.preparePrompt(prompt, variables);
+      return this.performCompleteWithTools(finalPrompt, tools, options);
     });
   }
 
@@ -81,6 +98,18 @@ export abstract class BaseLLMAdapter implements ILLMAdapter {
     onChunk: (chunk: string) => void,
     options?: LLMRequestOptions
   ): Promise<string>;
+
+  /**
+   * Perform a tool-calling request. Override in adapters that support tools.
+   * Default throws "not supported".
+   */
+  protected async performCompleteWithTools(
+    finalPrompt: string,
+    tools: Tool[],
+    options?: ToolCallOptions
+  ): Promise<ToolCallResponse> {
+    throw new Error(`Tool calling not supported by ${this.adapterName || 'this adapter'}`);
+  }
 
   public abstract testConnection(): Promise<boolean>;
 

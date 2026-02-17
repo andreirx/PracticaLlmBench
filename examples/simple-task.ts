@@ -106,20 +106,22 @@ async function main() {
 
   // OpenAI (requires OPENAI_API_KEY env var)
   if (process.env.OPENAI_API_KEY) {
-    suite.addModel('gpt-4o-mini', new OpenAIAdapter({
+    const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+    suite.addModel(model, new OpenAIAdapter({
       apiKey: process.env.OPENAI_API_KEY,
-      model: 'gpt-4o-mini',
+      model,
     }));
   }
 
   // Ollama (requires local Ollama server)
   try {
+    const model = process.env.OLLAMA_MODEL || 'llama3.2:3b';
     const ollamaTest = new OllamaAdapter({
       endpoint: 'http://localhost:11434',
-      model: 'llama3.2:3b',
+      model,
     });
     if (await ollamaTest.testConnection()) {
-      suite.addModel('llama3.2:3b', ollamaTest);
+      suite.addModel(model, ollamaTest);
     }
   } catch {
     console.log('Ollama not available, skipping...');
